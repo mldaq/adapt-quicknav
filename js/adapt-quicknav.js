@@ -48,7 +48,10 @@ define([
 		},
 
 		navigateTo: function(id) {
+			if (id === Adapt.course.get("_id")) id = "/";
+
 			var hash = "#" + (id === "/" ? id : "/id/" + id);
+
 			Backbone.history.navigate(hash, {
 				trigger: true, 
 				replace: false
@@ -58,7 +61,7 @@ define([
 		getParameters: function() {
 			var params = {};
 
-			if (_.keys(this.menuStructure).length === 0) {
+			if (_.keys(this.menuStructure).length === 0 || !this.state.currentMenu) {
 				params.pages = _.pluck(new Backbone.Collection(Adapt.contentObjects.where({_type: "page"})).toJSON(), [ "_id" ]);
 			} else {
 				params.menus = _.keys(this.menuStructure);
@@ -71,8 +74,9 @@ define([
 
 		getPrevPageIndex: function(menus, indexOfMenu, pages, indexOfPage) {
 			//console.log("quicknav::getPrevPageIndex", indexOfPage);
-			if (this.config._isContinuous == "global" && menus !== undefined) {
-				if (indexOfPage === 0) { //if page is at the beginning of the menu goto previous menu, last page
+
+			if (this.config._isContinuous == "global" && (menus !== undefined || !this.state.currentMenu)) {
+				if (indexOfPage === 0 || !this.state.currentMenu) { //if page is at the beginning of the menu goto previous menu, last page
 					if (this.config._global !== undefined && this.config._global._pagePrevious !== undefined) {
 						this.navigateTo(this.config._global._pagePrevious);
 						return;
@@ -102,7 +106,7 @@ define([
 				indexOfPage-=1; //previous page
 			}
 
-			if(this.isPageAvailable(pages, indexOfPage)) {
+			if (this.isPageAvailable(pages, indexOfPage)) {
 				return indexOfPage;
 			} else {
 				//uh-oh, that page isn't available - try again
@@ -112,8 +116,9 @@ define([
 
 		getNextPageIndex: function(menus, indexOfMenu, pages, indexOfPage) {
 			//console.log("quicknav::getNextPageIndex", indexOfPage);
-			if (this.config._isContinuous == "global" && menus !== undefined) {
-				if (indexOfPage === pages.length - 1) { //if page is at the end of the menu goto next menu, first page
+
+			if (this.config._isContinuous == "global" && (menus !== undefined || !this.state.currentMenu)) {
+				if (indexOfPage === pages.length - 1 || !this.state.currentMenu) { //if page is at the end of the menu goto next menu, first page
 					if (this.config._global !== undefined && this.config._global._pageNext !== undefined) {
 						this.navigateTo(this.config._global._pageNext);
 						return;
@@ -143,7 +148,7 @@ define([
 				indexOfPage+=1; //next page
 			}
 
-			if(this.isPageAvailable(pages, indexOfPage)) {
+			if (this.isPageAvailable(pages, indexOfPage)) {
 				return indexOfPage;
 			} else {
 				//uh-oh, that page isn't available - try again
@@ -164,16 +169,25 @@ define([
 			var pages;
 
 			if (_.keys(this.menuStructure).length === 0) {
-				pages = _.pluck(new Backbone.Collection(Adapt.contentObjects.where({_type: "page"})).toJSON(), [ "_id" ]);
+				pages = _.pluck(new Backbone.Collection(Adapt.contentObjects.where({_type: "page", _isAvailable: true})).toJSON(), [ "_id" ]);
+			} else if (!this.state.currentMenu) {
+				this.state.isFirstPage = true;
+				this.state.isLastPage = true;
+				return;
 			} else {
 				pages = _.keys(this.menuStructure[this.state.currentMenu.get("_id")]);
+				
+				pages = _.reject(pages, function(id) {
+					var model = Adapt.contentObjects.findWhere({_id: id});
+					return !model.get('_isAvailable');
+				});
 			}
 
 			if (pages === undefined) return;
 
 			var indexOfPage = _.indexOf(pages, this.state.currentPage.model.get("_id"));
 			
-			if (this.config._isContinuous == "local" || this.config._isContinuous == "global" ) {
+			if (this.config._isContinuous == "local" || this.config._isContinuous == "global") {
 				if (indexOfPage === 0 && indexOfPage == pages.length - 1 && this.config._isContinuous == "local") {
 					this.state.isFirstPage = true;
 					this.state.isLastPage = true;
@@ -187,14 +201,18 @@ define([
 			}
 		}
 	});
+
 	quicknav = new quicknav();
 
 	Adapt.on("app:dataReady", function() {
 		var menus = Adapt.contentObjects.where({_type: "menu"});
+
 		_.each(menus, function(menu) {
 			var id = menu.get("_id");
+			var pages = Adapt.contentObjects.where({_type: "page", _parentId: id});
+			
 			quicknav.menuStructure[id] = {};
-			var pages = Adapt.contentObjects.where({_type: "page", _parentId: id });
+
 			_.each(pages, function(page) {
 				quicknav.menuStructure[id][page.get("_id")] = page;
 			});
@@ -250,4 +268,5 @@ define([
 	});
 
 	return quicknav;
+
 });
